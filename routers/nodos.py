@@ -1,60 +1,126 @@
-from fastapi import APIRouter
 from models.nodo import Nodo
-from data.nodos import nodos
+from data.database import conexion, cursor
+from fastapi import APIRouter, HTTPException
+import sqlite3
 
 router = APIRouter()
 
-@router.get("/nodos")
-def obtener_nodos():
-    return nodos
-
-@router.get("/nodos/{id}")
-def obtener_nodo(id: int):
-
-    for nodo in nodos:
-        if nodo["id"] == id:
-            return nodo
-
-    return {"error": "Nodo no encontrado"}
-
 @router.post("/nodos")
-def crear_nodo(nodo: Nodo):
+def crear_nodo_db(nodo: Nodo):
 
-    nodos.append(nodo.model_dump())
+    try:
+
+        cursor.execute(
+            """
+            INSERT INTO nodos (id, nombre, ciudad)
+            VALUES (?, ?, ?)
+            """,
+            (
+                nodo.id,
+                nodo.nombre,
+                nodo.ciudad
+            )
+        )
+
+        conexion.commit()
+
+        return {
+            "mensaje": "Nodo agregado correctamente",
+            "nodo": nodo
+        }
+
+    except sqlite3.IntegrityError:
+
+        raise HTTPException(
+            status_code=400,
+            detail="El ID ya existe"
+        )
+
+@router.get("/nodos-db/{id}")
+def obtener_nodo_db(id: int):
+
+    cursor.execute("""
+        SELECT id, nombre, ciudad
+        FROM nodos
+        WHERE id = ?
+    """, (id,))
+
+    resultado = cursor.fetchone()
+
+    if resultado is None:
+     raise HTTPException(
+        status_code=404,
+        detail="Nodo no encontrado")
 
     return {
-        "mensaje": "Nodo agregado correctamente",
-        "nodo": nodo
+        "id": resultado[0],
+        "nombre": resultado[1],
+        "ciudad": resultado[2]
     }
 
-@router.put("/nodos/{id}")
-def actualizar_nodo(id: int, nodo_actualizado: Nodo):
+@router.put("/nodos-db/{id}")
+def actualizar_nodo_db(id: int, nodo: Nodo):
 
-    for index, nodo in enumerate(nodos):
+    cursor.execute("""
+        UPDATE nodos
+        SET nombre = ?, ciudad = ?
+        WHERE id = ?
+    """,
+    (
+        nodo.nombre,
+        nodo.ciudad,
+        id
+    ))
 
-        if nodo["id"] == id:
+    conexion.commit()
 
-            nodos[index] = nodo_actualizado.model_dump()
+    if cursor.rowcount == 0:
+     raise HTTPException(
+        status_code=404,
+        detail="Nodo no encontrado"
+    )
 
-            return {
-                "mensaje": "Nodo actualizado correctamente",
-                "nodo": nodo_actualizado
-            }
+    return {
+        "mensaje": "Nodo actualizado correctamente"
+    }
 
-    return {"error": "Nodo no encontrado"}
+@router.delete("/nodos-db/{id}")
+def eliminar_nodo_db(id: int):
 
-@router.delete("/nodos/{id}")
-def eliminar_nodo(id: int):
+    cursor.execute("""
+        DELETE FROM nodos
+        WHERE id = ?
+    """, (id,))
 
-    for index, nodo in enumerate(nodos):
+    conexion.commit()
 
-        if nodo["id"] == id:
+    if cursor.rowcount == 0:
+      raise HTTPException(
+        status_code=404,
+        detail="Nodo no encontrado"
+    )
 
-            nodo_eliminado = nodos.pop(index)
+    return {
+        "mensaje": "Nodo eliminado correctamente"
+    }
 
-            return {
-                "mensaje": "Nodo eliminado correctamente",
-                "nodo": nodo_eliminado
-            }
+@router.get("/nodos")
+def obtener_nodos():
 
-    return {"error": "Nodo no encontrado"}
+    cursor.execute("""
+        SELECT id, nombre, ciudad
+        FROM nodos
+    """)
+
+    resultados = cursor.fetchall()
+
+    nodos = []
+
+    for fila in resultados:
+        nodos.append({
+            "id": fila[0],
+            "nombre": fila[1],
+            "ciudad": fila[2]
+        })
+
+    return nodos
